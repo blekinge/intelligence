@@ -17,6 +17,6 @@ if [ ! -f ./strawberry.jpg ]; then
 wget https://docs.oracle.com/javase/tutorial/2d/images/examples/strawberry.jpg
 fi
 echo Running program $PROGRAM
-java -cp lib/libtensorflow-1.5.0.jar:target/intelligence-$VERSION.jar -Djava.library.path=jni $PROGRAM
+java -cp lib/libtensorflow-1.6.0.jar:target/intelligence-$VERSION.jar -Djava.library.path=jni $PROGRAM
 
 

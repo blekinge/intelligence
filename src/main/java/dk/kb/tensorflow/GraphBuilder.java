@@ -1,4 +1,4 @@
-package dk.kb;
+package dk.kb.tensorflow;
 
 import org.tensorflow.DataType;
 import org.tensorflow.Graph;
