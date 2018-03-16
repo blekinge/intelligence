@@ -35,7 +35,7 @@ You will have link errors such as these,
 if you 
 run the command ldd jni/*.so
 
-
+```
 jni/libtensorflow_framework.so:
 jni/libtensorflow_framework.so: /lib64/libc.so.6: version `GLIBC_2.14' not found (required by jni/libtensorflow_framework.so)
 jni/libtensorflow_framework.so: /lib64/libc.so.6: version `GLIBC_2.17' not found (required by jni/libtensorflow_framework.so)
@@ -94,7 +94,7 @@ jni/libtensorflow_jni.so: /usr/lib64/libstdc++.so.6: version `CXXABI_1.3.7' not 
 	libgcc_s.so.1 => /lib64/libgcc_s.so.1 (0x00007f1410bce000)
 	libc.so.6 => /lib64/libc.so.6 (0x00007f1410839000)
 	/lib64/ld-linux-x86-64.so.2 (0x0000003a8cc00000)
-
+´´´
 
 
 
