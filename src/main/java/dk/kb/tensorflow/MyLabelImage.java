@@ -1,6 +1,5 @@
 package dk.kb.tensorflow;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
@@ -31,10 +30,8 @@ public class MyLabelImage {
         }
         String modelDir = args[0];
         String imageFile = args[1];
-        File pict = new File(imageFile);
         
         byte[] imageBytes = readAllBytesOrExit(Paths.get(imageFile));
-        System.out.println("read image " + imageFile);
         byte[] graphDef = readAllBytesOrExit(Paths.get(modelDir, "tensorflow_inception_graph.pb"));
         List<String> labels = readAllLinesOrExit(Paths.get(modelDir, "imagenet_comp_graph_label_strings.txt"));
         Tensor<Float> image = constructAndExecuteGraphToNormalizeImage(imageBytes);
@@ -46,8 +43,6 @@ public class MyLabelImage {
                     labels.get(bestLabelIdx),
                     labelProbabilities[bestLabelIdx] * 100f));
 
-        System.out.println(image.numDimensions());
-        System.out.println(image.numElements());
     }
     
     private static byte[] readAllBytesOrExit(Path path) {

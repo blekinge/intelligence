@@ -46,8 +46,6 @@ public class UseModel {
         }
         boolean singleFile = imageDir.isFile();
         MultiLayerNetwork nn = Models.readModel(model);
-        //List<String> labelsList = Arrays.asList(new String[]{"back", "front"});
-        //String[] labels = new String[]{"back", "front"};
         String[] labels = readLabelFile(labelFile);
         for (int i=0; i< labels.length; i++) {
             System.out.println("Assuming labelIndex["+ i + "] refers to '" + labels[i] + "'");

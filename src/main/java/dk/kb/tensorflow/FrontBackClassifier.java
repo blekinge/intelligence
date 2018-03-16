@@ -1,17 +1,13 @@
 package dk.kb.tensorflow;
 
 import java.io.File;
-import java.io.IOException;
-import java.nio.charset.Charset;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Iterator;
 import java.util.List;
 
 import org.tensorflow.Graph;
-import org.tensorflow.Operation;
 import org.tensorflow.Output;
 import org.tensorflow.Session;
 import org.tensorflow.Tensor;
@@ -23,20 +19,21 @@ import org.tensorflow.Tensor;
  * Tries to evaluate a picture as one of several pre-trained categories.
  * tested on front/KE044976.jpg, back/KE042847.jpg from corpus selected by DGJ
  * Assumes the following files are in the modelDir: graph.pb, labels.txt
+ * 
  */
 public class FrontBackClassifier {
 
     private static final String graphPbName = "graph.pb";
     private static final String labelsName = "labels.txt"; 
+    private static final String OutputOperationName = "final_result";
     
     public static void main(String[] args) {
-        if (args.length < 3) {
-            System.err.println("Missing args. Needs 3 arguments (modelDir, imagefile, channels of the image). Only given " +  args.length);
+        if (args.length < 2) {
+            System.err.println("Missing args. Needs 3 arguments (modelDir, imagefile). Only given " +  args.length);
             System.exit(1);       
         }
         String modelDirPath = args[0];
         String imageFilePath = args[1];
-        int channels = Integer.parseInt(args[2]);
         File modelDir = new File(modelDirPath);
         if (!modelDir.exists()) {
             System.err.println("Did not found the given modeldir: " + modelDir.getAbsolutePath());
@@ -48,47 +45,60 @@ public class FrontBackClassifier {
             System.err.println("Did not found the required file '" +  labelsName + "' in the modeldir: " +  modelDir.getAbsolutePath());
             System.exit(1);
         }
-        byte[] imageBytes = readAllBytesOrExit(Paths.get(imageFilePath));
-        System.out.println("read image " + imageFilePath);
-        byte[] graphDef = readAllBytesOrExit(Paths.get(modelDirPath, graphPbName));
-        List<String> labels = readAllLinesOrExit(Paths.get(modelDirPath,labelsName));
-        Tensor<Float> image = constructAndExecuteGraphToNormalizeImage(imageBytes, channels);
+        File imageFileOrDir = new File(imageFilePath);
         
-        float[] labelProbabilities = executeInceptionGraph(graphDef, image);
-        int bestLabelIdx = maxIndex(labelProbabilities);
-        System.out.println(
-                String.format("BEST MATCH for picture %s: %s (%.2f%% likely)",
-                    imageFilePath,    
-                    labels.get(bestLabelIdx),
-                    labelProbabilities[bestLabelIdx] * 100f));
-
-        System.out.println(image.numDimensions());
-        System.out.println(image.numElements());
-        
+        FrontBackClassifier fbc = new FrontBackClassifier(modelDir);
+        if (imageFileOrDir.isFile()) {
+            TensorFlowResult r = fbc.evaluate(imageFileOrDir);
+            System.out.println(r);
+        } else {
+            List<TensorFlowResult> results = fbc.evaluateDir(imageFileOrDir);
+            System.out.println("Evaluated " + results.size() + " files ");
+            for (TensorFlowResult r: results) {
+                System.out.println(r);
+            }
+        }
     }
     
-    private static byte[] readAllBytesOrExit(Path path) {
-        System.out.println(path);
-        try {
-          return Files.readAllBytes(path);
-        } catch (IOException e) {
-          System.err.println("Failed to read [" + path + "]: " + e.getMessage());
-          System.exit(1);
-        }
-        return null;
-      }
+    private byte[] graphDef; // the pb file as a byte array
+    private List<String> labels; // the labels file as a list of String
+    private Graph execGraph; // The execution graph
     
-    private static List<String> readAllLinesOrExit(Path path) {
-        try {
-          return Files.readAllLines(path, Charset.forName("UTF-8"));
-        } catch (IOException e) {
-          System.err.println("Failed to read [" + path + "]: " + e.getMessage());
-          System.exit(0);
-        }
-        return null;
+    public FrontBackClassifier(File modelDir) {
+        Path graphPbPath = Paths.get(modelDir.getAbsolutePath(), graphPbName);
+        Path graphLabelPath = Paths.get(modelDir.getAbsolutePath(), labelsName);
+        this.graphDef = Utils.readAllBytesOrExit(graphPbPath);
+        this.labels = Utils.readAllLinesOrExit(graphLabelPath);
+        this.execGraph = new Graph();
+        this.execGraph.importGraphDef(graphDef);
     }
     
-    private static Tensor<Float> constructAndExecuteGraphToNormalizeImage(byte[] imageBytes, int channels) {
+    public TensorFlowResult evaluate(File picture) {
+        if (!picture.isFile()) {
+            System.err.println("Ignoring file '" + picture.getAbsolutePath() + "'. It is not a file");
+            return null;
+        }
+        byte[] imageBytes = Utils.readAllBytesOrExit(picture.toPath());
+        Tensor<Float> image = constructAndExecuteGraphToNormalizeImage(imageBytes);
+        float[] probabilities = executeGraph(execGraph, image);
+        int bestLabelIdx = Utils.maxIndex(probabilities);
+        return new TensorFlowResult(labels.get(bestLabelIdx), probabilities[bestLabelIdx], picture.getAbsolutePath());
+    }
+    
+    public List<TensorFlowResult> evaluateDir(File imageDir) {
+        List<TensorFlowResult> result = new ArrayList<TensorFlowResult>();
+        File[] images = imageDir.listFiles();
+        if (images == null || images.length==0) {
+            System.err.println("No images found in selected imagedir '" + imageDir.getAbsolutePath() + "'.Nothing to do");
+            return result;
+        }
+        for (File image: images) {
+            result.add(evaluate(image));
+        }
+        return result;
+    }
+    
+    private static Tensor<Float> constructAndExecuteGraphToNormalizeImage(byte[] imageBytes) {
         try (Graph g = new Graph()) {
           GraphBuilder b = new GraphBuilder(g);
           // Some constants specific to the pre-trained model at:
@@ -111,13 +121,14 @@ public class FrontBackClassifier {
                   b.sub(
                       b.resizeBilinear(
                           b.expandDims(
+                                  // Note: the 3 is the number of channels. It doesn't work, if we set it to 1 with the tested model
                               b.cast(b.decodeJpeg(input, 3), Float.class),
                               b.constant("make_batch", 0)),
                           b.constant("size", new int[] {H, W})),
                       b.constant("mean", mean)),
                   b.constant("scale", scale));
           try (Session s = new Session(g)) {
-            System.out.println("OP: " +   output.op().name());
+            //System.out.println("OP: " +   output.op().name());
             return s.runner()
                     .fetch(output.op().name())
                     .run()
@@ -127,43 +138,25 @@ public class FrontBackClassifier {
         }
     }
     
-    private static float[] executeInceptionGraph(byte[] graphDef, Tensor<Float> image) {
-        try (Graph g = new Graph()) {
-          g.importGraphDef(graphDef);
-          describeGraph(g);          
-          try (Session s = new Session(g);
-              Tensor<Float> result =
-                  s.runner().feed("input", image).fetch("final_result").run().get(0).expect(Float.class)) {
+    /**
+     * @param g an pretrained Tensor-Flow Graph
+     * @param image an image represented as a Tensor<Float> to be used as input
+     * @return the result of the evaluation of the image on the Graph
+     */
+    private static float[] executeGraph(Graph g, Tensor<Float> image) {
+        try (Session s = new Session(g);
+                Tensor<Float> result =
+                        s.runner().feed("input", image).fetch(OutputOperationName).run().get(0).expect(Float.class)) {
             final long[] rshape = result.shape();
             if (result.numDimensions() != 2 || rshape[0] != 1) {
-              throw new RuntimeException(
-                  String.format(
-                      "Expected model to produce a [1 N] shaped tensor where N is the number of labels, instead it produced one with shape %s",
-                      Arrays.toString(rshape)));
+                throw new RuntimeException(
+                        String.format(
+                                "Expected model to produce a [1 N] shaped tensor where N is the number of labels, instead it produced one with shape %s",
+                                Arrays.toString(rshape)));
             }
             int nlabels = (int) rshape[1];
             return result.copyTo(new float[1][nlabels])[0];
-          }
         }
-      }
-
-      private static void describeGraph(Graph g) {
-          System.out.println(g);
-          Iterator<Operation> i = g.operations();
-          int j=0;
-          while(i.hasNext()) {
-              System.out.println("OPS #" + ++j + ": " + i.next().name());
-          }
-        
     }
-
-    private static int maxIndex(float[] probabilities) {
-        int best = 0;
-        for (int i = 1; i < probabilities.length; ++i) {
-          if (probabilities[i] > probabilities[best]) {
-            best = i;
-          }
-        }
-        return best;
-      }
+    
 }
